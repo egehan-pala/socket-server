@@ -1,165 +1,220 @@
 import socket
-import threading
 import tkinter as tk
-from tkinter import filedialog, messagebox
+from tkinter import filedialog, messagebox, simpledialog
 import os
+ 
 
-class ClientApp:
+class Client:
     def __init__(self, root):
         self.root = root
         self.root.title("Client GUI")
         self.client_socket = None
         self.username = None
 
-        # GUI Setup
-        self.server_label = tk.Label(root, text="Server IP:")
-        self.server_label.pack()
-        self.server_entry = tk.Entry(root)
-        self.server_entry.pack()
+        # GUI Components
+        tk.Label(root, text="Server IP:").pack()
+        self.server_ip_entry = tk.Entry(root)
+        self.server_ip_entry.pack()
 
-        self.port_label = tk.Label(root, text="Port:")
-        self.port_label.pack()
+        tk.Label(root, text="Server Port:").pack()
         self.port_entry = tk.Entry(root)
         self.port_entry.pack()
 
-        self.username_label = tk.Label(root, text="Username:")
-        self.username_label.pack()
+        tk.Label(root, text="Username:").pack()
         self.username_entry = tk.Entry(root)
         self.username_entry.pack()
 
         self.connect_button = tk.Button(root, text="Connect", command=self.connect_to_server)
         self.connect_button.pack()
 
-        self.log_label = tk.Label(root, text="Activity Log:")
-        self.log_label.pack()
+        tk.Label(root, text="Activity Log:").pack()
         self.log_listbox = tk.Listbox(root, width=50, height=20)
         self.log_listbox.pack()
 
-        self.file_upload_button = tk.Button(root, text="Upload File", command=self.upload_file, state=tk.DISABLED)
-        self.file_upload_button.pack()
+        self.upload_button = tk.Button(root, text="Upload File", command=self.upload_file, state=tk.DISABLED)
+        self.upload_button.pack()
 
-        self.file_download_button = tk.Button(root, text="Download File", command=self.download_file, state=tk.DISABLED)
-        self.file_download_button.pack()
+        self.delete_button = tk.Button(root, text="Delete File", command=self.delete_file, state=tk.DISABLED)
+        self.delete_button.pack()
+
+        self.download_button = tk.Button(root, text="Download File", command=self.download_file, state=tk.DISABLED)
+        self.download_button.pack()
 
         self.list_files_button = tk.Button(root, text="List Files", command=self.list_files, state=tk.DISABLED)
         self.list_files_button.pack()
 
-        self.disconnect_button = tk.Button(root, text="Disconnect", command=self.disconnect_from_server, state=tk.DISABLED)
+        self.disconnect_button = tk.Button(root, text="Disconnect", command=self.disconnect, state=tk.DISABLED)
         self.disconnect_button.pack()
 
+    def log_message(self, message):
+        self.log_listbox.insert(tk.END, message)
+        self.log_listbox.yview(tk.END)
+
     def connect_to_server(self):
-        server_ip = self.server_entry.get()
+        server_ip = self.server_ip_entry.get()
         port = self.port_entry.get()
         username = self.username_entry.get()
 
         if not server_ip or not port.isdigit() or not username:
-            messagebox.showerror("Error", "Please enter valid server IP, port, and username!")
+            self.log_message("Error: Enter valid server IP, port, and username!")
             return
 
         try:
             self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.client_socket.connect((server_ip, int(port)))
-            self.client_socket.send(username.encode('utf-8'))
-            response = self.client_socket.recv(1024).decode('utf-8')
-
-            if "Username already taken" in response:
-                messagebox.showerror("Error", response)
+            # Receive the server's prompt for username
+            response = self.client_socket.recv(1024).decode()
+            self.log_message(response)
+            # Send the username
+            self.client_socket.send(username.encode())
+            # Receive the server's response
+            response = self.client_socket.recv(1024).decode()
+            if "Error" in response:
+                self.log_message(response)
                 self.client_socket.close()
                 return
+            else:
+                self.log_message(response)
 
             self.username = username
             self.log_message("Connected to the server.")
             self.enable_controls()
 
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to connect to the server: {e}")
+            self.log_message(f"Error: Failed to connect to the server. {e}")
 
     def enable_controls(self):
-        self.file_upload_button.config(state=tk.NORMAL)
-        self.file_download_button.config(state=tk.NORMAL)
+        self.upload_button.config(state=tk.NORMAL)
+        self.delete_button.config(state=tk.NORMAL)
+        self.download_button.config(state=tk.NORMAL)
         self.list_files_button.config(state=tk.NORMAL)
         self.disconnect_button.config(state=tk.NORMAL)
 
     def disable_controls(self):
-        self.file_upload_button.config(state=tk.DISABLED)
-        self.file_download_button.config(state=tk.DISABLED)
+        self.upload_button.config(state=tk.DISABLED)
+        self.delete_button.config(state=tk.DISABLED)
+        self.download_button.config(state=tk.DISABLED)
         self.list_files_button.config(state=tk.DISABLED)
         self.disconnect_button.config(state=tk.DISABLED)
-
-    def log_message(self, message):
-        self.log_listbox.insert(tk.END, message)
-        self.log_listbox.yview(tk.END)
 
     def upload_file(self):
         filepath = filedialog.askopenfilename()
         if not filepath:
+            self.log_message("No file selected.")
             return
 
         try:
             filename = os.path.basename(filepath)
             file_size = os.path.getsize(filepath)
-            self.client_socket.send(f"upload {filename}".encode('utf-8'))
-            self.client_socket.recv(1024)  # Acknowledge
-            self.client_socket.send(str(file_size).encode('utf-8'))
-            self.client_socket.recv(1024)  # Acknowledge
+            # Send the upload command with the filename properly quoted
+            command = f'upload "{filename}"'
+            self.client_socket.send(command.encode())
+            response = self.client_socket.recv(1024).decode()
+            if not response.startswith("Send file size"):
+                self.log_message(f"Unexpected response from server: {response}")
+                return
+            # Send the file size
+            self.client_socket.send(str(file_size).encode())
 
+            # Now send the file data
             with open(filepath, "rb") as f:
-                self.client_socket.sendall(f.read())
+                while True:
+                    chunk = f.read(1024)
+                    if not chunk:
+                        break
+                    self.client_socket.send(chunk)
 
-            response = self.client_socket.recv(1024).decode('utf-8')
+            # Receive the server's confirmation
+            response = self.client_socket.recv(1024).decode()
             self.log_message(response)
 
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to upload file: {e}")
+            self.log_message(f"Error: Failed to upload file. {e}")
 
-    def download_file(self):
-        filename = filedialog.askstring("Download File", "Enter filename to download:")
-        owner = filedialog.askstring("File Owner", "Enter the file owner:")
-        save_dir = filedialog.askdirectory()
-
-        if not filename or not owner or not save_dir:
+    def delete_file(self):
+        filename = simpledialog.askstring("Delete File", "Enter the filename to delete:")
+        if not filename:
+            self.log_message("No filename entered.")
             return
 
         try:
-            self.client_socket.send(f"download {filename} {owner}".encode('utf-8'))
-            response = self.client_socket.recv(1024).decode('utf-8')
+            # Send the delete command with the filename properly quoted
+            command = f'delete "{filename}"'
+            self.client_socket.send(command.encode())
+            response = self.client_socket.recv(1024).decode()
+            self.log_message(response)  # Log the server's response
+        except Exception as e:
+            self.log_message(f"Error: Failed to delete file. {e}")
 
-            if response.isdigit():
-                file_size = int(response)
-                save_path = os.path.join(save_dir, filename)
+    def download_file(self):
+        filename = simpledialog.askstring("Download File", "Enter the filename to download:")
+        owner = simpledialog.askstring("File Owner", "Enter the owner of the file:")
+        save_dir = filedialog.askdirectory()
 
-                with open(save_path, "wb") as f:
-                    bytes_received = 0
-                    while bytes_received < file_size:
-                        chunk = self.client_socket.recv(1024)
-                        f.write(chunk)
-                        bytes_received += len(chunk)
+        if not filename or not owner or not save_dir:
+            self.log_message("Error: Missing information for download.")
+            return
 
-                self.log_message(f"File {filename} downloaded successfully to {save_path}.")
-            else:
-                self.log_message(response)
+        try:
+            # Send download request to the server with proper quoting
+            command = f'download "{filename}" "{owner}"'
+            self.client_socket.send(command.encode())
+            response = self.client_socket.recv(1024).decode()
+
+            if not response.isdigit():
+                self.log_message(response)  # Log error from the server
+                return
+
+            file_size = int(response)
+            self.client_socket.send(b"Ready")  # Confirm readiness to receive the file
+
+            save_path = os.path.join(save_dir, filename)
+            with open(save_path, "wb") as f:
+                received = 0
+                while received < file_size:
+                    chunk_size = min(1024, file_size - received)
+                    data = self.client_socket.recv(chunk_size)
+                    if not data:
+                        break
+                    f.write(data)
+                    received += len(data)
+
+            # After receiving the file data, receive the server's confirmation
+            response = self.client_socket.recv(1024).decode()
+            self.log_message(response)
+            self.log_message(f"File {filename} downloaded successfully to {save_dir}.")
 
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to download file: {e}")
+            self.log_message(f"Error: Failed to download file. {e}")
 
     def list_files(self):
         try:
             self.client_socket.send(b"list")
-            response = self.client_socket.recv(1024).decode('utf-8')
-            self.log_message("Available files:")
-            self.log_message(response)
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to list files: {e}")
+            data = b""
+            while True:
+                chunk = self.client_socket.recv(1024)
+                if not chunk or len(chunk) < 1024:
+                    data += chunk
+                    break
+                data += chunk
 
-    def disconnect_from_server(self):
+            response = data.decode()
+            self.log_message("Files on the server:")
+            self.log_message(response)
+
+        except Exception as e:
+            self.log_message(f"Error: Failed to list files. {e}")
+
+    def disconnect(self):
         try:
             self.client_socket.close()
+            self.client_socket = None
             self.disable_controls()
             self.log_message("Disconnected from the server.")
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to disconnect: {e}")
+            self.log_message(f"Error: Failed to disconnect. {e}")
 
 if __name__ == "__main__":
     root = tk.Tk()
-    app = ClientApp(root)
+    app = Client(root)
     root.mainloop()
