@@ -4,6 +4,7 @@ import tkinter as tk
 from tkinter import filedialog
 import os
 import shlex 
+import asyncio
 
 class Server:
     def __init__(self, root):
@@ -80,7 +81,7 @@ class Server:
                 try:
                     closing_message = "DISCONNECT"
                     
-                    client_socket.send(closing_message.encode())  # Send closing message to client
+                    client_socket.sendall(closing_message.encode())  # Send closing message to client
                     
                     client_socket.close()
                     
@@ -286,14 +287,12 @@ class Server:
             # Notify client about successful transfer
             conn.send(b"File sent successfully.\n")
             self.log_message(f"File {filename} sent to {requesting_user} from {owner}.")
-            if owner in self.clients:
-                uploader_conn = self.clients[owner]
-                uploader_conn.send(f"File {filename} was downloaded by {requesting_user}.\n".encode())
+
             if owner in self.clients and owner != requesting_user:
                 uploader_conn = self.clients[owner]
                
                 # Send the message to the owner's client, which will be displayed on the owner's GUI
-                uploader_conn.send(f"File {filename} was downloaded by {requesting_user}.\n".encode())
+                #uploader_conn.sendall(f"File {filename} was downloaded by {requesting_user}.\n".encode())
    
         except Exception as e:
             conn.send(b"Error: File transfer failed.\n")

@@ -3,6 +3,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog
 import os
 import asyncio
+import threading
 
 class Client:
     def __init__(self, root):
@@ -10,10 +11,7 @@ class Client:
         self.root.title("Client GUI")
         self.client_socket = None
         self.username = None
-
-        self.writer= None
-        self.reader=None
-        self.running=None
+        self.lock = threading.Lock()  # Lock for thread safety
 
         # GUI Components
         tk.Label(root, text="Server IP:").pack()
@@ -51,6 +49,10 @@ class Client:
         self.disconnect_button.pack()
 
     def log_message(self, message):
+        # Ensure GUI updates are thread-safe
+        self.root.after(0, self._log_message_safe, message)
+
+    def _log_message_safe(self, message):
         self.log_listbox.insert(tk.END, message)
         self.log_listbox.yview(tk.END)
 
@@ -62,21 +64,17 @@ class Client:
         if not server_ip or not port.isdigit() or not username:
             self.log_message("Error: Enter valid server IP, port, and username!")
             return
-
+        self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
-            self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             
             self.client_socket.connect((server_ip, int(port)))
-              # Wait for connection to be established
-              # Set socket to non-blocking mode
-            # Receive the server's prompt for username
-
             response = self.client_socket.recv(1024).decode()
             self.log_message(response)
-            # Send the username
+            
+
             self.client_socket.send(username.encode())
-            # Receive the server's response
             response = self.client_socket.recv(1024).decode()
+
             if "Error" in response:
                 self.log_message(response)
                 self.client_socket.close()
@@ -87,9 +85,7 @@ class Client:
             self.username = username
             self.log_message("Connected to the server.")
             self.enable_controls()
-            
-            
-            
+
         except Exception as e:
             self.log_message(f"Error: Failed to connect to the server. {e}")
 
@@ -116,7 +112,7 @@ class Client:
         try:
             filename = os.path.basename(filepath)
             file_size = os.path.getsize(filepath)
-            # Send the upload command with the filename properly quoted
+
             command = f'upload "{filename}"'
             self.client_socket.send(command.encode())
             response = self.client_socket.recv(1024).decode()
@@ -124,10 +120,9 @@ class Client:
             if not response.startswith("Send file size"):
                 self.log_message(f"Unexpected response from server: {response}")
                 return
-            # Send the file size
+
             self.client_socket.send(str(file_size).encode())
 
-            # Now send the file data
             with open(filepath, "rb") as f:
                 while True:
                     chunk = f.read(1024)
@@ -135,7 +130,6 @@ class Client:
                         break
                     self.client_socket.send(chunk)
 
-            # Receive the server's confirmation
             response = self.client_socket.recv(1024).decode()
             self.log_message(response)
 
@@ -149,11 +143,10 @@ class Client:
             return
 
         try:
-            # Send the delete command with the filename properly quoted
             command = f'delete "{filename}"'
             self.client_socket.send(command.encode())
             response = self.client_socket.recv(1024).decode()
-            self.log_message(response)  # Log the server's response
+            self.log_message(response)
         except Exception as e:
             self.log_message(f"Error: Failed to delete file. {e}")
 
@@ -167,17 +160,16 @@ class Client:
             return
 
         try:
-            # Send download request to the server with proper quoting
             command = f'download "{filename}" "{owner}"'
             self.client_socket.send(command.encode())
             response = self.client_socket.recv(1024).decode()
 
             if not response.isdigit():
-                self.log_message(response)  # Log error from the server
+                self.log_message(response)
                 return
 
             file_size = int(response)
-            self.client_socket.send(b"Ready")  # Confirm readiness to receive the file
+            self.client_socket.send(b"Ready")
 
             save_path = os.path.join(save_dir, filename)
             with open(save_path, "wb") as f:
@@ -190,7 +182,6 @@ class Client:
                     f.write(data)
                     received += len(data)
 
-            # After receiving the file data, receive the server's confirmation
             response = self.client_socket.recv(1024).decode()
             self.log_message(response)
             self.log_message(f"File {filename} downloaded successfully to {save_dir}.")
@@ -225,12 +216,16 @@ class Client:
         except Exception as e:
             self.log_message(f"Error: Failed to disconnect. {e}")
 
-    
-
-
-
+    def receive_messages(self):
+            try:
+                while True:
+                    message = self.client_socket.recv(1024).decode()
+                    if message:
+                        self.log_message(message)
+            except Exception as e:
+                self.log_message(f"Error receiving message: {e}")
 
 if __name__ == "__main__":
     root = tk.Tk()
     app = Client(root)
-    root.mainloop() 
+    root.mainloop()
