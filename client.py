@@ -2,7 +2,7 @@ import socket
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog
 import os
- 
+import asyncio
 
 class Client:
     def __init__(self, root):
@@ -10,6 +10,10 @@ class Client:
         self.root.title("Client GUI")
         self.client_socket = None
         self.username = None
+
+        self.writer= None
+        self.reader=None
+        self.running=None
 
         # GUI Components
         tk.Label(root, text="Server IP:").pack()
@@ -61,8 +65,12 @@ class Client:
 
         try:
             self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            
             self.client_socket.connect((server_ip, int(port)))
+              # Wait for connection to be established
+              # Set socket to non-blocking mode
             # Receive the server's prompt for username
+
             response = self.client_socket.recv(1024).decode()
             self.log_message(response)
             # Send the username
@@ -79,7 +87,9 @@ class Client:
             self.username = username
             self.log_message("Connected to the server.")
             self.enable_controls()
-
+            
+            
+            
         except Exception as e:
             self.log_message(f"Error: Failed to connect to the server. {e}")
 
@@ -110,6 +120,7 @@ class Client:
             command = f'upload "{filename}"'
             self.client_socket.send(command.encode())
             response = self.client_socket.recv(1024).decode()
+
             if not response.startswith("Send file size"):
                 self.log_message(f"Unexpected response from server: {response}")
                 return
@@ -214,7 +225,12 @@ class Client:
         except Exception as e:
             self.log_message(f"Error: Failed to disconnect. {e}")
 
+    
+
+
+
+
 if __name__ == "__main__":
     root = tk.Tk()
     app = Client(root)
-    root.mainloop()
+    root.mainloop() 

@@ -26,6 +26,10 @@ class Server:
         self.start_button = tk.Button(root, text="Start Server", command=self.start_server)
         self.start_button.pack()
 
+        self.stop_button = tk.Button(root, text="Close Server", command=self.stop_server, state=tk.DISABLED)
+        self.stop_button.pack() #newly added
+
+
         tk.Label(root, text="Activity Log:").pack()
         self.log_listbox = tk.Listbox(root, width=50, height=20)
         self.log_listbox.pack()
@@ -38,6 +42,7 @@ class Server:
         self.storage_dir = filedialog.askdirectory()
         if self.storage_dir:
             self.log_message(f"Storage directory set to: {self.storage_dir}")
+            self.update_file_list()
         else:
             self.log_message("No folder selected.")
 
@@ -54,7 +59,46 @@ class Server:
         self.server_socket.bind(('0.0.0.0', int(port)))
         self.server_socket.listen(5)
         self.log_message(f"Server started on port {port}")
+
+        self.start_button.config(state=tk.DISABLED)
+        self.stop_button.config(state=tk.NORMAL)
         threading.Thread(target=self.accept_clients, daemon=True).start()
+
+    def stop_server(self):
+        try:
+            self.log_message("Shutting down server...")
+
+            # Stop accepting new clients
+            if self.server_socket:
+                self.server_socket.close()
+                self.server_socket = None
+                self.log_message("Server socket closed.")
+
+            # Close all client connections
+            for client_name in list(self.clients.keys()):
+                client_socket = self.clients[client_name]
+                try:
+                    closing_message = "DISCONNECT"
+                    
+                    client_socket.send(closing_message.encode())  # Send closing message to client
+                    
+                    client_socket.close()
+                    
+                    self.log_message(f"Disconnected client {client_name}")
+                except Exception as e:
+                    self.log_message(f"Error disconnecting client {client_name}: {e}")
+
+            self.clients.clear()  # Clear the clients list
+
+            # Update the GUI
+            self.start_button.config(state=tk.NORMAL)
+            self.stop_button.config(state=tk.DISABLED)
+            self.log_message("Server closed successfully.")
+        except Exception as e:
+            self.log_message(f"Error closing server: {e}")
+            self.root.quit()
+            self.root.destroy()
+
 
     def accept_clients(self):
         while True:
@@ -107,11 +151,13 @@ class Server:
                 elif data.startswith("download"):
                     try:
                         tokens = shlex.split(data)
+                        
                         if len(tokens) != 3:
                             conn.send(b"Error: Invalid download command format.\n")
                             continue
                         _, filename, owner = tokens
-                        self.send_file(conn, filename, owner)
+                        self.send_file(conn, filename, owner,username)
+
                     except ValueError:
                         conn.send(b"Error: Invalid download command format.\n")
                         continue
@@ -210,7 +256,7 @@ class Server:
             conn.send(b"Error: File not found or insufficient permissions.\n")
             self.log_message(f"Failed delete attempt by {username} for file {filename}.")
 
-    def send_file(self, conn, filename, owner):
+    def send_file(self, conn, filename, owner,requesting_user):
         try:
             # Construct the unique filename
             unique_filename = f"{owner}_{filename}"
@@ -239,11 +285,31 @@ class Server:
 
             # Notify client about successful transfer
             conn.send(b"File sent successfully.\n")
-            self.log_message(f"File {filename} sent to client from {owner}.")
+            self.log_message(f"File {filename} sent to {requesting_user} from {owner}.")
+            if owner in self.clients:
+                uploader_conn = self.clients[owner]
+                uploader_conn.send(f"File {filename} was downloaded by {requesting_user}.\n".encode())
+            if owner in self.clients and owner != requesting_user:
+                uploader_conn = self.clients[owner]
+               
+                # Send the message to the owner's client, which will be displayed on the owner's GUI
+                uploader_conn.send(f"File {filename} was downloaded by {requesting_user}.\n".encode())
+   
         except Exception as e:
             conn.send(b"Error: File transfer failed.\n")
             self.log_message(f"Error sending file {filename} from {owner}: {e}")
 
+
+    def update_file_list(self):
+    
+        if not self.storage_dir:
+            return
+        
+        self.files = {}
+        for filename in os.listdir(self.storage_dir):
+            if os.path.isfile(os.path.join(self.storage_dir, filename)):
+                owner = filename.split('_')[0]  # Assuming the file has the format `owner_filename`
+                self.files[filename] = owner
 if __name__ == "__main__":
     root = tk.Tk()
     app = Server(root)
