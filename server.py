@@ -4,7 +4,7 @@ import tkinter as tk
 from tkinter import filedialog
 import os
 import shlex 
-import asyncio
+import time 
 
 class Server:
     def __init__(self, root):
@@ -14,7 +14,7 @@ class Server:
         self.clients = {}
         self.files = {}
         self.storage_dir = None
-
+        
         # GUI Components
         tk.Label(root, text="Server Port:").pack()
         self.port_entry = tk.Entry(root)
@@ -68,7 +68,8 @@ class Server:
     def stop_server(self):
         try:
             self.log_message("Shutting down server...")
-
+            time.sleep(2)
+            
             # Stop accepting new clients
             if self.server_socket:
                 self.server_socket.close()
@@ -81,7 +82,7 @@ class Server:
                 try:
                     closing_message = "DISCONNECT"
                     
-                    client_socket.sendall(closing_message.encode())  # Send closing message to client
+                    client_socket.send(closing_message.encode())  # Send closing message to client
                     
                     client_socket.close()
                     
@@ -100,12 +101,10 @@ class Server:
             self.root.quit()
             self.root.destroy()
 
-
     def accept_clients(self):
         while True:
             conn, addr = self.server_socket.accept()
             threading.Thread(target=self.handle_client, args=(conn, addr), daemon=True).start()
-
 
     def handle_client(self, conn, addr):
         conn.send(b"Enter your username: ")
@@ -171,7 +170,6 @@ class Server:
         conn.close()
         del self.clients[username]
         self.log_message(f"Client {username} disconnected.")
-
 
     def send_file_list(self, conn):
         if not self.files:
@@ -290,9 +288,10 @@ class Server:
 
             if owner in self.clients and owner != requesting_user:
                 uploader_conn = self.clients[owner]
-               
+                
+  
                 # Send the message to the owner's client, which will be displayed on the owner's GUI
-                #uploader_conn.sendall(f"File {filename} was downloaded by {requesting_user}.\n".encode())
+                uploader_conn.send(f"File {filename} was downloaded by {requesting_user}.\n".encode())
    
         except Exception as e:
             conn.send(b"Error: File transfer failed.\n")
@@ -300,6 +299,7 @@ class Server:
 
 
     def update_file_list(self):
+
     
         if not self.storage_dir:
             return
@@ -309,6 +309,7 @@ class Server:
             if os.path.isfile(os.path.join(self.storage_dir, filename)):
                 owner = filename.split('_')[0]  # Assuming the file has the format `owner_filename`
                 self.files[filename] = owner
+
 if __name__ == "__main__":
     root = tk.Tk()
     app = Server(root)

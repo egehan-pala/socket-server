@@ -2,8 +2,8 @@ import socket
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog
 import os
-import asyncio
 import threading
+import select
 
 class Client:
     def __init__(self, root):
@@ -11,7 +11,7 @@ class Client:
         self.root.title("Client GUI")
         self.client_socket = None
         self.username = None
-        self.lock = threading.Lock()  # Lock for thread safety
+            
 
         # GUI Components
         tk.Label(root, text="Server IP:").pack()
@@ -75,6 +75,7 @@ class Client:
             self.client_socket.send(username.encode())
             response = self.client_socket.recv(1024).decode()
 
+
             if "Error" in response:
                 self.log_message(response)
                 self.client_socket.close()
@@ -82,9 +83,11 @@ class Client:
             else:
                 self.log_message(response)
 
+            
             self.username = username
             self.log_message("Connected to the server.")
             self.enable_controls()
+            self.start_receive_thread()
 
         except Exception as e:
             self.log_message(f"Error: Failed to connect to the server. {e}")
@@ -216,14 +219,45 @@ class Client:
         except Exception as e:
             self.log_message(f"Error: Failed to disconnect. {e}")
 
-    def receive_messages(self):
-            try:
-                while True:
-                    message = self.client_socket.recv(1024).decode()
-                    if message:
-                        self.log_message(message)
-            except Exception as e:
-                self.log_message(f"Error receiving message: {e}")
+    def start_receive_thread(self):
+        # This method creates a separate thread to handle receiving messages from the server.
+        receive_thread = threading.Thread(target=self.receive_message, daemon=True)
+        receive_thread.start()
+
+    def receive_message(self):
+        try:
+            while True:
+                # Wait for the socket to be readable
+                readable, _, _ = select.select([self.client_socket], [], [], 0.1)
+                
+                if readable:
+                    try:
+                        message = self.client_socket.recv(1024).decode()
+                        if message:
+                            print(message)
+                            
+                            self.log_message(f"Server: {message}")
+                            
+                            if message.startswith("DISCONNECT"):
+                                
+                                self.disconnect()  # Disconnect client
+                                break  # Exit the loop to stop the client
+
+                    except BlockingIOError:
+                        continue  # No message available, continue checking
+                    except Exception as e:
+                        self.log_message(f"Error while receiving message: {e}")
+                        break  # Stop reading if there's an error
+                
+                # Check if the socket is closed
+                if self.client_socket.fileno() == -1:  # Socket is closed
+                    break
+                
+        except Exception as e:
+            self.log_message(f"Connection error: {e}")
+            self.client_socket.close()  # Close socket on error to prevent crash
+
+
 
 if __name__ == "__main__":
     root = tk.Tk()
