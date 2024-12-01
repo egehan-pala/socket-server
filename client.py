@@ -3,7 +3,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog
 import os
 import threading
-import select
+import time
 
 class Client:
     def __init__(self, root):
@@ -11,7 +11,8 @@ class Client:
         self.root.title("Client GUI")
         self.client_socket = None
         self.username = None
-            
+        self.socket_lock = threading.RLock()  # Using RLock for reentrancy
+        self.receive_thread_running = False  # Flag to control receive thread
 
         # GUI Components
         tk.Label(root, text="Server IP:").pack()
@@ -66,15 +67,12 @@ class Client:
             return
         self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
-            
             self.client_socket.connect((server_ip, int(port)))
             response = self.client_socket.recv(1024).decode()
             self.log_message(response)
-            
 
             self.client_socket.send(username.encode())
             response = self.client_socket.recv(1024).decode()
-
 
             if "Error" in response:
                 self.log_message(response)
@@ -83,11 +81,10 @@ class Client:
             else:
                 self.log_message(response)
 
-            
             self.username = username
             self.log_message("Connected to the server.")
             self.enable_controls()
-            self.start_receive_thread()
+            self.start_receive_thread()  # Start the receive_message thread
 
         except Exception as e:
             self.log_message(f"Error: Failed to connect to the server. {e}")
@@ -116,25 +113,29 @@ class Client:
             filename = os.path.basename(filepath)
             file_size = os.path.getsize(filepath)
 
-            command = f'upload "{filename}"'
-            self.client_socket.send(command.encode())
-            response = self.client_socket.recv(1024).decode()
+            with self.socket_lock:
+                if self.client_socket is None:
+                    self.log_message("Not connected to the server.")
+                    return
+                command = f'upload "{filename}"'
+                self.client_socket.send(command.encode())
+                response = self.client_socket.recv(1024).decode()
 
-            if not response.startswith("Send file size"):
-                self.log_message(f"Unexpected response from server: {response}")
-                return
+                if not response.startswith("Send file size"):
+                    self.log_message(f"Unexpected response from server: {response}")
+                    return
 
-            self.client_socket.send(str(file_size).encode())
+                self.client_socket.send(str(file_size).encode())
 
-            with open(filepath, "rb") as f:
-                while True:
-                    chunk = f.read(1024)
-                    if not chunk:
-                        break
-                    self.client_socket.send(chunk)
+                with open(filepath, "rb") as f:
+                    while True:
+                        chunk = f.read(1024)
+                        if not chunk:
+                            break
+                        self.client_socket.send(chunk)
 
-            response = self.client_socket.recv(1024).decode()
-            self.log_message(response)
+                response = self.client_socket.recv(1024).decode()
+                self.log_message(response)
 
         except Exception as e:
             self.log_message(f"Error: Failed to upload file. {e}")
@@ -146,10 +147,15 @@ class Client:
             return
 
         try:
-            command = f'delete "{filename}"'
-            self.client_socket.send(command.encode())
-            response = self.client_socket.recv(1024).decode()
-            self.log_message(response)
+            with self.socket_lock:
+                if self.client_socket is None:
+                    self.log_message("Not connected to the server.")
+                    return
+                command = f'delete "{filename}"'
+                self.client_socket.send(command.encode())
+                response = self.client_socket.recv(1024).decode()
+                self.log_message(response)
+
         except Exception as e:
             self.log_message(f"Error: Failed to delete file. {e}")
 
@@ -163,30 +169,35 @@ class Client:
             return
 
         try:
-            command = f'download "{filename}" "{owner}"'
-            self.client_socket.send(command.encode())
-            response = self.client_socket.recv(1024).decode()
+            with self.socket_lock:
+                if self.client_socket is None:
+                    self.log_message("Not connected to the server.")
+                    return
+                command = f'download "{filename}" "{owner}"'
+                self.client_socket.send(command.encode())
+                response = self.client_socket.recv(1024).decode()
 
-            if not response.isdigit():
+                if not response.isdigit():
+                    self.log_message(response)
+                    return
+
+                file_size = int(response)
+                self.client_socket.send(b"Ready")
+
+                save_path = os.path.join(save_dir, filename)
+                with open(save_path, "wb") as f:
+                    received = 0
+                    while received < file_size:
+                        data = self.client_socket.recv(1024)
+                        if not data:
+                            break
+                        f.write(data)
+                        received += len(data)
+
+                # Read any remaining data (e.g., "File sent successfully.\n")
+                response = self.client_socket.recv(1024).decode()
                 self.log_message(response)
-                return
 
-            file_size = int(response)
-            self.client_socket.send(b"Ready")
-
-            save_path = os.path.join(save_dir, filename)
-            with open(save_path, "wb") as f:
-                received = 0
-                while received < file_size:
-                    chunk_size = min(1024, file_size - received)
-                    data = self.client_socket.recv(chunk_size)
-                    if not data:
-                        break
-                    f.write(data)
-                    received += len(data)
-
-            response = self.client_socket.recv(1024).decode()
-            self.log_message(response)
             self.log_message(f"File {filename} downloaded successfully to {save_dir}.")
 
         except Exception as e:
@@ -194,70 +205,88 @@ class Client:
 
     def list_files(self):
         try:
-            self.client_socket.send(b"list")
-            data = b""
-            while True:
-                chunk = self.client_socket.recv(1024)
-                if not chunk or len(chunk) < 1024:
+            with self.socket_lock:
+                if self.client_socket is None:
+                    self.log_message("Not connected to the server.")
+                    return
+                self.client_socket.send(b"list")
+                data = b""
+                while True:
+                    chunk = self.client_socket.recv(1024)
                     data += chunk
-                    break
-                data += chunk
+                    if len(chunk) < 1024:
+                        break
 
-            response = data.decode()
-            self.log_message("Files on the server:")
-            self.log_message(response)
+                response = data.decode()
+                self.log_message("Files on the server:")
+                self.log_message(response)
 
         except Exception as e:
             self.log_message(f"Error: Failed to list files. {e}")
 
     def disconnect(self):
         try:
-            self.client_socket.close()
-            self.client_socket = None
+            with self.socket_lock:
+                if self.client_socket:
+                    self.client_socket.close()
+                self.client_socket = None
+                self.receive_thread_running = False  # Stop the receive thread
             self.disable_controls()
             self.log_message("Disconnected from the server.")
         except Exception as e:
             self.log_message(f"Error: Failed to disconnect. {e}")
 
     def start_receive_thread(self):
-        # This method creates a separate thread to handle receiving messages from the server.
+        # Create a separate thread to handle receiving messages from the server.
+        self.receive_thread_running = True
         receive_thread = threading.Thread(target=self.receive_message, daemon=True)
         receive_thread.start()
 
     def receive_message(self):
         try:
-            while True:
-                # Wait for the socket to be readable
-                readable, _, _ = select.select([self.client_socket], [], [], 0.1)
-                
-                if readable:
+            while self.receive_thread_running:
+                acquired = self.socket_lock.acquire(timeout=0.1)
+                if acquired:
                     try:
-                        message = self.client_socket.recv(1024).decode()
-                        if message:
-                            print(message)
-                            
-                            self.log_message(f"Server: {message}")
-                            
-                            if message.startswith("DISCONNECT"):
-                                
-                                self.disconnect()  # Disconnect client
-                                break  # Exit the loop to stop the client
-
-                    except BlockingIOError:
-                        continue  # No message available, continue checking
-                    except Exception as e:
-                        self.log_message(f"Error while receiving message: {e}")
-                        break  # Stop reading if there's an error
-                
-                # Check if the socket is closed
-                if self.client_socket.fileno() == -1:  # Socket is closed
-                    break
-                
+                        if self.client_socket is None:
+                            break  # Socket is closed, exit the loop
+                        self.client_socket.settimeout(0.1)
+                        try:
+                            message = self.client_socket.recv(1024).decode()
+                            if message:
+                                if message.startswith("NOTIFICATION:"):
+                                    self.log_message(f"Server: {message}")
+                                elif message.startswith("DISCONNECT"):
+                                    self.log_message("Disconnected by server.")
+                                    self.disconnect()
+                                    break
+                                else:
+                                    # Handle other messages
+                                    self.log_message(f"Server: {message}")
+                            else:
+                                # Connection closed by server
+                                self.log_message("Connection closed by server.")
+                                self.disconnect()
+                                break
+                        except socket.timeout:
+                            continue  # No message available, continue checking
+                        except Exception as e:
+                            self.log_message(f"Error while receiving message: {e}")
+                            self.disconnect()
+                            break
+                        finally:
+                            if self.client_socket:
+                                self.client_socket.settimeout(None)
+                    finally:
+                        self.socket_lock.release()
+                else:
+                    # Could not acquire lock, socket is being used by another thread
+                    # Wait a bit and try again
+                    time.sleep(0.1)
         except Exception as e:
             self.log_message(f"Connection error: {e}")
-            self.client_socket.close()  # Close socket on error to prevent crash
-
-
+            if self.client_socket:
+                self.client_socket.close()
 
 if __name__ == "__main__":
     root = tk.Tk()

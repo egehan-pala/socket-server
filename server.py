@@ -3,8 +3,8 @@ import threading
 import tkinter as tk
 from tkinter import filedialog
 import os
-import shlex 
-import time 
+import shlex
+import time
 
 class Server:
     def __init__(self, root):
@@ -14,7 +14,8 @@ class Server:
         self.clients = {}
         self.files = {}
         self.storage_dir = None
-        
+        self.server_running = False
+
         # GUI Components
         tk.Label(root, text="Server Port:").pack()
         self.port_entry = tk.Entry(root)
@@ -28,8 +29,7 @@ class Server:
         self.start_button.pack()
 
         self.stop_button = tk.Button(root, text="Close Server", command=self.stop_server, state=tk.DISABLED)
-        self.stop_button.pack() #newly added
-
+        self.stop_button.pack()
 
         tk.Label(root, text="Activity Log:").pack()
         self.log_listbox = tk.Listbox(root, width=50, height=20)
@@ -57,20 +57,25 @@ class Server:
             return
 
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.server_socket.bind(('0.0.0.0', int(port)))
-        self.server_socket.listen(5)
-        self.log_message(f"Server started on port {port}")
+        try:
+            self.server_socket.bind(('0.0.0.0', int(port)))
+            self.server_socket.listen(5)
+            self.server_running = True
+            self.log_message(f"Server started on port {port}")
 
-        self.start_button.config(state=tk.DISABLED)
-        self.stop_button.config(state=tk.NORMAL)
-        threading.Thread(target=self.accept_clients, daemon=True).start()
+            self.start_button.config(state=tk.DISABLED)
+            self.stop_button.config(state=tk.NORMAL)
+            threading.Thread(target=self.accept_clients, daemon=True).start()
+        except Exception as e:
+            self.log_message(f"Error starting server: {e}")
+            self.server_socket = None
 
     def stop_server(self):
         try:
             self.log_message("Shutting down server...")
-            time.sleep(2)
-            
+
             # Stop accepting new clients
+            self.server_running = False
             if self.server_socket:
                 self.server_socket.close()
                 self.server_socket = None
@@ -81,11 +86,11 @@ class Server:
                 client_socket = self.clients[client_name]
                 try:
                     closing_message = "DISCONNECT"
-                    
+
                     client_socket.send(closing_message.encode())  # Send closing message to client
-                    
+
                     client_socket.close()
-                    
+
                     self.log_message(f"Disconnected client {client_name}")
                 except Exception as e:
                     self.log_message(f"Error disconnecting client {client_name}: {e}")
@@ -102,24 +107,29 @@ class Server:
             self.root.destroy()
 
     def accept_clients(self):
-        while True:
-            conn, addr = self.server_socket.accept()
-            threading.Thread(target=self.handle_client, args=(conn, addr), daemon=True).start()
+        while self.server_running:
+            try:
+                conn, addr = self.server_socket.accept()
+                threading.Thread(target=self.handle_client, args=(conn, addr), daemon=True).start()
+            except Exception as e:
+                if self.server_running:
+                    self.log_message(f"Error accepting clients: {e}")
+                break
 
     def handle_client(self, conn, addr):
-        conn.send(b"Enter your username: ")
-        username = conn.recv(1024).decode().strip()
-        if username in self.clients:
-            conn.send(b"Error: Username already taken!\n")
-            conn.close()
-            return
+        try:
+            conn.send(b"Enter your username: ")
+            username = conn.recv(1024).decode().strip()
+            if username in self.clients:
+                conn.send(b"Error: Username already taken!\n")
+                conn.close()
+                return
 
-        self.clients[username] = conn
-        self.log_message(f"Client {username} connected from {addr}")
-        conn.send(b"Welcome to the server!\n")
+            self.clients[username] = conn
+            self.log_message(f"Client {username} connected from {addr}")
+            conn.send(b"Welcome to the server!\n")
 
-        while True:
-            try:
+            while True:
                 data = conn.recv(1024).decode().strip()
                 if not data:
                     break
@@ -151,40 +161,42 @@ class Server:
                 elif data.startswith("download"):
                     try:
                         tokens = shlex.split(data)
-                        
                         if len(tokens) != 3:
                             conn.send(b"Error: Invalid download command format.\n")
                             continue
                         _, filename, owner = tokens
-                        self.send_file(conn, filename, owner,username)
-
+                        self.send_file(conn, filename, owner, username)
                     except ValueError:
                         conn.send(b"Error: Invalid download command format.\n")
                         continue
                 else:
                     conn.send(b"Error: Invalid command!\n")
-            except Exception as e:
-                self.log_message(f"Error handling client {username}: {e}")
-                break
-
-        conn.close()
-        del self.clients[username]
-        self.log_message(f"Client {username} disconnected.")
+        except Exception as e:
+            self.log_message(f"Error handling client {addr}: {e}")
+        finally:
+            conn.close()
+            if username in self.clients:
+                del self.clients[username]
+                self.log_message(f"Client {username} disconnected.")
 
     def send_file_list(self, conn):
-        if not self.files:
-            conn.send(b"No files available.\n")
-        else:
-            file_list_entries = []
-            for filename, owner in self.files.items():
-                prefix = f"{owner}_"
-                if filename.startswith(prefix):
-                    display_name = filename[len(prefix):]
-                else:
-                    display_name = filename
-                file_list_entries.append(f"{display_name} (Owner: {owner})")
-            file_list = "\n".join(file_list_entries)
-            conn.send(file_list.encode())
+        try:
+            if not self.files:
+                conn.send(b"No files available.\n")
+            else:
+                file_list_entries = []
+                for filename, owner in self.files.items():
+                    prefix = f"{owner}_"
+                    if filename.startswith(prefix):
+                        display_name = filename[len(prefix):]
+                    else:
+                        display_name = filename
+                    file_list_entries.append(f"{display_name} (Owner: {owner})")
+                file_list = "\n".join(file_list_entries)
+                conn.send(file_list.encode())
+        except Exception as e:
+            self.log_message(f"Error sending file list: {e}")
+            conn.send(b"Error: Failed to retrieve file list.\n")
 
     def receive_file(self, conn, filename, username):
         try:
@@ -255,7 +267,7 @@ class Server:
             conn.send(b"Error: File not found or insufficient permissions.\n")
             self.log_message(f"Failed delete attempt by {username} for file {filename}.")
 
-    def send_file(self, conn, filename, owner,requesting_user):
+    def send_file(self, conn, filename, owner, requesting_user):
         try:
             # Construct the unique filename
             unique_filename = f"{owner}_{filename}"
@@ -286,29 +298,33 @@ class Server:
             conn.send(b"File sent successfully.\n")
             self.log_message(f"File {filename} sent to {requesting_user} from {owner}.")
 
+            # Send notification to the owner if they are connected and not the requester
             if owner in self.clients and owner != requesting_user:
                 uploader_conn = self.clients[owner]
-                
-  
-                # Send the message to the owner's client, which will be displayed on the owner's GUI
-                uploader_conn.send(f"File {filename} was downloaded by {requesting_user}.\n".encode())
-   
+
+                # Send the notification to the owner's client
+                try:
+                    notification = f"NOTIFICATION: Your file '{filename}' was downloaded by {requesting_user}."
+                    uploader_conn.send(notification.encode())
+                    self.log_message(f"Notification sent to {owner} about download by {requesting_user}.")
+                except Exception as e:
+                    self.log_message(f"Error sending notification to {owner}: {e}")
+
         except Exception as e:
             conn.send(b"Error: File transfer failed.\n")
             self.log_message(f"Error sending file {filename} from {owner}: {e}")
 
-
     def update_file_list(self):
-
-    
         if not self.storage_dir:
             return
-        
+
         self.files = {}
         for filename in os.listdir(self.storage_dir):
             if os.path.isfile(os.path.join(self.storage_dir, filename)):
-                owner = filename.split('_')[0]  # Assuming the file has the format `owner_filename`
-                self.files[filename] = owner
+                parts = filename.split('_', 1)
+                if len(parts) == 2:
+                    owner, actual_filename = parts
+                    self.files[filename] = owner
 
 if __name__ == "__main__":
     root = tk.Tk()
