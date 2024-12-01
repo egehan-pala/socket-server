@@ -109,6 +109,10 @@ class Client:
             self.log_message("No file selected.")
             return
 
+        # Start a new thread for the upload operation
+        threading.Thread(target=self._upload_file_thread, args=(filepath,), daemon=True).start()
+
+    def _upload_file_thread(self, filepath):
         try:
             filename = os.path.basename(filepath)
             file_size = os.path.getsize(filepath)
@@ -129,13 +133,15 @@ class Client:
 
                 with open(filepath, "rb") as f:
                     while True:
-                        chunk = f.read(1024)
+                        chunk = f.read(4096)
                         if not chunk:
                             break
-                        self.client_socket.send(chunk)
+                        self.client_socket.sendall(chunk)
 
                 response = self.client_socket.recv(1024).decode()
                 self.log_message(response)
+
+            self.log_message(f"File {filename} uploaded successfully.")
 
         except Exception as e:
             self.log_message(f"Error: Failed to upload file. {e}")
@@ -168,6 +174,10 @@ class Client:
             self.log_message("Error: Missing information for download.")
             return
 
+        # Start a new thread for the download operation
+        threading.Thread(target=self._download_file_thread, args=(filename, owner, save_dir), daemon=True).start()
+
+    def _download_file_thread(self, filename, owner, save_dir):
         try:
             with self.socket_lock:
                 if self.client_socket is None:
@@ -188,13 +198,18 @@ class Client:
                 with open(save_path, "wb") as f:
                     received = 0
                     while received < file_size:
-                        data = self.client_socket.recv(1024)
+                        remaining = file_size - received
+                        data = self.client_socket.recv(min(4096, remaining))
                         if not data:
                             break
                         f.write(data)
                         received += len(data)
 
-                # Read any remaining data (e.g., "File sent successfully.\n")
+                # Now, after receiving the file data, read any additional messages
+                if self.client_socket is None:
+                    self.log_message("Not connected to the server.")
+                    return
+                # Read the confirmation message from the server
                 response = self.client_socket.recv(1024).decode()
                 self.log_message(response)
 
