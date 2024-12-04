@@ -19,11 +19,11 @@ class Client:
         self.create_gui()
 
     def create_gui(self):
-
+        
         style = ttk.Style()
         style.theme_use('clam')  # Theme for good looking GUI
 
-        # GUI starting components
+        # GUI starting compenents
         settings_frame = ttk.Frame(self.root)
         settings_frame.pack(pady=10)
 
@@ -42,7 +42,9 @@ class Client:
         self.connect_button = ttk.Button(settings_frame, text="Connect", command=self.connect_to_server)
         self.connect_button.grid(row=3, columnspan=2, pady=10)
 
-        # Activity log box
+        
+
+        #Activity log box 
         log_frame = ttk.Frame(self.root)
         log_frame.pack(pady=10)
 
@@ -74,6 +76,7 @@ class Client:
         status_frame = ttk.Frame(self.root)
         status_frame.pack(pady=10)
 
+        
         self.status_label = ttk.Label(status_frame, text="Disconnected", foreground="red")
         self.status_label.pack()
 
@@ -100,7 +103,7 @@ class Client:
         if not server_ip or not port.isdigit() or not username:
             self.log_message("Error: Enter valid server IP, port, and username!")
             return
-
+        
         # Error control for connection
 
         self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -122,21 +125,21 @@ class Client:
             self.username = username
             self.log_message("Connected to the server.")
             self.enable_controls()
-            self.start_receive_thread()  # Start the receive message thread
+            self.start_receive_thread()  # Start the receive message thread for listening server messages 
             self.update_status_label("Connected")
-            self.connect_button.config(state=tk.DISABLED)
+            self.connect_button.config(state=tk.DISABLED) # Make connect button disabled after connection
 
         except Exception as e:
             self.log_message(f"Error: Failed to connect to the server. {e}")
 
-    def enable_controls(self):
+    def enable_controls(self): # Enable request options after connection
         self.upload_button.config(state=tk.NORMAL)
         self.delete_button.config(state=tk.NORMAL)
         self.download_button.config(state=tk.NORMAL)
         self.list_files_button.config(state=tk.NORMAL)
         self.disconnect_button.config(state=tk.NORMAL)
 
-    def disable_controls(self):
+    def disable_controls(self): # Disable requst options after disconnect
         self.upload_button.config(state=tk.DISABLED)
         self.delete_button.config(state=tk.DISABLED)
         self.download_button.config(state=tk.DISABLED)
@@ -149,7 +152,7 @@ class Client:
             self.log_message("No file selected.")
             return
 
-        # New thread for upload
+        # New thread for upload 
         threading.Thread(target=self._upload_file_thread, args=(filepath,), daemon=True).start()
 
     def _upload_file_thread(self, filepath):
@@ -157,7 +160,7 @@ class Client:
             filename = os.path.basename(filepath)
             file_size = os.path.getsize(filepath)
 
-            with self.socket_lock:
+            with self.socket_lock: #Locking for thread crashes
                 if self.client_socket is None:
                     self.log_message("Not connected to the server.")
                     return
@@ -193,7 +196,7 @@ class Client:
             return
 
         try:
-            with self.socket_lock:
+            with self.socket_lock: # Locking for thread crashes
                 if self.client_socket is None:
                     self.log_message("Not connected to the server.")
                     return
@@ -201,8 +204,6 @@ class Client:
                 self.client_socket.send(command.encode())
                 response = self.client_socket.recv(1024).decode()
                 self.log_message(response)
-                if "Error: File is currently being accessed" in response:
-                    messagebox.showerror("Delete Error", "File is currently being accessed. Please try again later.")
 
         except Exception as e:
             self.log_message(f"Error: Failed to delete file. {e}")
@@ -221,7 +222,7 @@ class Client:
 
     def _download_file_thread(self, filename, owner, save_dir):
         try:
-            with self.socket_lock:
+            with self.socket_lock: # Locking for thread crashes
                 if self.client_socket is None:
                     self.log_message("Not connected to the server.")
                     return
@@ -241,16 +242,17 @@ class Client:
                     received = 0
                     while received < file_size:
                         remaining = file_size - received
-                        data = self.client_socket.recv(min(4096, remaining))
+                        data = self.client_socket.recv(min(4096, remaining)) # Make them packet delivery again for deal with large file sizes
                         if not data:
                             break
                         f.write(data)
                         received += len(data)
 
+                
                 if self.client_socket is None:
                     self.log_message("Not connected to the server.")
                     return
-
+                
                 # Read the confirmation message from the server
                 response = self.client_socket.recv(1024).decode()
                 self.log_message(response)
@@ -276,7 +278,7 @@ class Client:
 
                 response = data.decode()
                 self.log_message("Files on the server:")
-                for line in response.splitlines():
+                for line in response.splitlines(): # Split them from new lines to make them readable
                     self.log_message(line)
 
         except Exception as e:
@@ -296,15 +298,16 @@ class Client:
         self.update_status_label("Disconnected")
         self.connect_button.config(state=tk.NORMAL)
 
-    def start_receive_thread(self):
+    def start_receive_thread(self): # Listening thread starter for receive message function using this in connect server function
+        
         self.receive_thread_running = True
         receive_thread = threading.Thread(target=self.receive_message, daemon=True)
         receive_thread.start()
 
-    def receive_message(self):
+    def receive_message(self): # Listening messages from server
         try:
             while self.receive_thread_running:
-                acquired = self.socket_lock.acquire(timeout=0.1)
+                acquired = self.socket_lock.acquire(timeout=0.1) # This is for crash 
                 if acquired:
                     try:
                         if self.client_socket is None:
@@ -312,7 +315,7 @@ class Client:
                         self.client_socket.settimeout(0.1)
                         try:
                             message = self.client_socket.recv(1024).decode()
-                            if message:
+                            if message: # Message content checking for motion of client
                                 if message.startswith("NOTIFICATION:"):
                                     self.log_message(f"{message}")
                                 elif message.startswith("DISCONNECT"):
@@ -328,7 +331,7 @@ class Client:
                                 self.disconnect()
                                 break
                         except socket.timeout:
-                            continue  # Continue listening
+                            continue  # Contiune to listening 
                         except Exception as e:
                             self.log_message(f"Error while receiving message: {e}")
                             self.disconnect()
@@ -339,20 +342,22 @@ class Client:
                     finally:
                         self.socket_lock.release()
                 else:
+                    
                     # Wait and try again
                     time.sleep(0.1)
         except Exception as e:
             self.log_message(f"Connection error: {e}")
             if self.client_socket:
                 self.client_socket.close()
-
-    def update_status_label(self, status):
+    
+    def update_status_label(self, status): # User frienly function for GUI informing about connection 
         if status == "Connected":
             self.status_label.config(text="Connected", foreground="green")
         elif status == "Disconnected":
             self.status_label.config(text="Disconnected", foreground="red")
         else:
             self.status_label.config(text=status, foreground="orange")
+
 
 if __name__ == "__main__":
     root = tk.Tk()
