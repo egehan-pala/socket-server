@@ -94,7 +94,7 @@ class Client:
     def _log_message_safe(self, message):
         self.log_listbox.insert(tk.END, message)
         self.log_listbox.yview(tk.END)
-
+        
     def connect_to_server(self):
         server_ip = self.server_ip_entry.get()
         port = self.port_entry.get()
@@ -103,12 +103,13 @@ class Client:
         if not server_ip or not port.isdigit() or not username:
             self.log_message("Error: Enter valid server IP, port, and username!")
             return
-        
-        # Error control for connection
 
         self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.client_socket.settimeout(5)  # Set a timeout of 5 seconds
+
         try:
             self.client_socket.connect((server_ip, int(port)))
+            self.client_socket.settimeout(None)  # Reset timeout to blocking mode
             response = self.client_socket.recv(1024).decode()
             self.log_message(response)
 
@@ -125,12 +126,15 @@ class Client:
             self.username = username
             self.log_message("Connected to the server.")
             self.enable_controls()
-            self.start_receive_thread()  # Start the receive message thread for listening server messages 
+            self.start_receive_thread()
             self.update_status_label("Connected")
-            self.connect_button.config(state=tk.DISABLED) # Make connect button disabled after connection
+            self.connect_button.config(state=tk.DISABLED)
 
         except Exception as e:
             self.log_message(f"Error: Failed to connect to the server. {e}")
+        finally:
+            self.client_socket.settimeout(None)  # Ensure timeout is reset
+
 
     def enable_controls(self): # Enable request options after connection
         self.upload_button.config(state=tk.NORMAL)
