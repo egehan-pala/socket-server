@@ -12,11 +12,11 @@ class Server:
         self.root.geometry("500x500")
         self.server_socket = None
         self.clients = {}
-        self.files = {} #Holding info of clients and sockets to communicate
+        self.files = {} #holding info of clients and sockets to communicate
         self.storage_dir = None
         self.server_running = False
 
-        # Frame for server settings
+        #frame for server settings
         settings_frame = tk.Frame(root)
         settings_frame.pack(pady=10)
 
@@ -28,10 +28,10 @@ class Server:
         self.select_button = tk.Button(settings_frame, text="Select Folder", command=self.select_folder)
         self.select_button.grid(row=1, column=1, padx=5, pady=5)
         
-        #Starting info created in first two steps
+        #stsrting info created in first two steps
 
 
-        # Frame for server buttons
+        # frame for server buttons
         control_frame = tk.Frame(root)
         control_frame.pack(pady=10)
 
@@ -41,7 +41,7 @@ class Server:
         self.stop_button = tk.Button(control_frame, text="Close Server", command=self.stop_server, state=tk.DISABLED)
         self.stop_button.grid(row=0, column=1, padx=5, pady=5)
 
-        # Activity log
+        #activity log
         log_frame = tk.Frame(root)
         log_frame.pack(pady=10)
 
@@ -49,7 +49,7 @@ class Server:
         self.log_listbox = tk.Listbox(log_frame, width=50, height=15, selectmode=tk.SINGLE)
         self.log_listbox.pack()
 
-        # Scroolbar for listbox
+        # scroolbar for listbox
         scrollbar = tk.Scrollbar(log_frame, orient="vertical", command=self.log_listbox.yview)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self.log_listbox.config(yscrollcommand=scrollbar.set)
@@ -61,8 +61,8 @@ class Server:
     def select_folder(self):
         self.storage_dir = filedialog.askdirectory()
         if self.storage_dir:
-            self.log_message(f"Storage directory set to: {self.storage_dir}") #Info about where is server located
-            self.update_file_list() # Getting info about previous files
+            self.log_message(f"Storage directory set to: {self.storage_dir}") #info about where is server located
+            self.update_file_list() # getting info about previous files
         else:
             self.log_message("No folder selected.")
 
@@ -75,7 +75,7 @@ class Server:
             self.log_message("Error: Storage folder not selected!")
             return
 
-        # Server starting conditions checked
+        # srver starting conditions cheked
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
             self.server_socket.bind(('0.0.0.0', int(port)))
@@ -84,8 +84,8 @@ class Server:
             self.log_message(f"Server started on port {port}")
 
             self.start_button.config(state=tk.DISABLED)
-            self.stop_button.config(state=tk.NORMAL) # Makins buttons disable or normal to make user friendly GUI
-            threading.Thread(target=self.accept_clients, daemon=True).start() #Listening thread started for server listening clients
+            self.stop_button.config(state=tk.NORMAL) # makins buttons disable or normal to make user friendly gui
+            threading.Thread(target=self.accept_clients, daemon=True).start() #listening thread started for server listening clients
         except Exception as e:
             self.log_message(f"Error starting server: {e}")
             self.server_socket = None
@@ -94,18 +94,18 @@ class Server:
         try:
             self.log_message("Shutting down server...")
 
-            # Stop accepting new clients
+            # stop accepting new clients
             self.server_running = False
             if self.server_socket:
                 self.server_socket.close()
                 self.server_socket = None
                 self.log_message("Server socket closed.")
 
-            # Close all client connections and inform them about disconnection
+            # close all client connections and inform them about disconnection
             for client_name in list(self.clients.keys()):
                 client_socket = self.clients[client_name]
                 try:
-                    closing_message = "DISCONNECT" # Information message for client to disconnect themself
+                    closing_message = "DISCONNECT" # information message for client to disconnect themself
 
                     client_socket.send(closing_message.encode())  
 
@@ -115,9 +115,9 @@ class Server:
                 except Exception as e:
                     self.log_message(f"Error disconnecting client {client_name}: {e}")
 
-            self.clients.clear()  # Clear the clients list
+            self.clients.clear()  # clear the clients list
 
-            # Update the GUI buttons
+            # update the GUI buttons
             self.start_button.config(state=tk.NORMAL)
             self.stop_button.config(state=tk.DISABLED)
             self.log_message("Server closed successfully.")
@@ -130,18 +130,18 @@ class Server:
         while self.server_running:
             try:
                 conn, addr = self.server_socket.accept()
-                threading.Thread(target=self.handle_client, args=(conn, addr), daemon=True).start() # Starting thread for listening client actions list_files etc..
+                threading.Thread(target=self.handle_client, args=(conn, addr), daemon=True).start() # starting thread for listening client actions list_files etc..
             except Exception as e:
                 if self.server_running:
                     self.log_message(f"Error accepting clients: {e}")
                 break
 
-    def handle_client(self, conn, addr): # Getting request from clients
+    def handle_client(self, conn, addr): # getting request from clients
         try:
             conn.send(b"Enter your username: ")
             username = conn.recv(1024).decode().strip()
             if username in self.clients:
-                conn.send(b"Error: Username already taken!\n") # Info about username already taken
+                conn.send(b"Error: Username already taken!\n") #inf o about username already taken
                 conn.close()
                 
                 return
@@ -155,7 +155,7 @@ class Server:
                 if not data:
                     break
                 
-                # Handling client requests and calling their functions
+                # handling client requests and calling their functions
                 if data.startswith("list"):
                     self.send_file_list(conn)
                 elif data.startswith("upload"):
@@ -208,7 +208,7 @@ class Server:
             else:
                 file_list_entries = []
                 for filename, owner in self.files.items():
-                    prefix = f"{owner}_" # Writing name of file owners
+                    prefix = f"{owner}_" # writing name of file owners
                     if filename.startswith(prefix):
                         display_name = filename[len(prefix):]
                     else:
@@ -220,21 +220,21 @@ class Server:
             self.log_message(f"Error sending file list: {e}")
             conn.send(b"Error: Failed to retrieve file list.\n")
 
-    def receive_file(self, conn, filename, username): # Upload file function
+    def receive_file(self, conn, filename, username): # upload file function
         try:
-            # Request file size from client
+            # request file size from client
             conn.send(b"Send file size: ")
             file_size_data = conn.recv(1024).decode().strip()
 
-            # Validate received file size
+            # validate received file size
             if not file_size_data.isdigit():
                 raise ValueError(f"Invalid file size received: {file_size_data}")
 
             file_size = int(file_size_data)
             unique_filename = f"{username}_{filename}"
-            filepath = os.path.join(self.storage_dir, unique_filename) # Storage place of folder
+            filepath = os.path.join(self.storage_dir, unique_filename) # storage place of folder
 
-            # If the file already exist allow overwriting
+            # if the file already exist allow overwriting
             if os.path.exists(filepath):
                 self.log_message(f"Warning: Overwriting existing file {filename} uploaded by {username}.")
 
@@ -243,13 +243,13 @@ class Server:
             # Write the file data to disk
             with open(filepath, "wb") as f:
                 while received < file_size:
-                    data = conn.recv(min(1024, file_size - received)) #Dealing with high file sizes make them packet sending style
+                    data = conn.recv(min(1024, file_size - received)) #dealing with high file sizes make them packet sending style
                     if not data:
                         raise ConnectionError("Connection interrupted during file upload.")
                     f.write(data)
                     received += len(data)
 
-            # Check if the entire file was received
+            # check if the entire file was received
             if received == file_size:
                 self.files[unique_filename] = username
                 conn.send(b"File received successfully.\n")
@@ -270,13 +270,13 @@ class Server:
             self.log_message(f"Unexpected error receiving file {filename} from {username}: {e}")
 
     def delete_file(self, conn, filename, username):
-        unique_filename = f"{username}_{filename}"  # Include username prefix for deleting only owner's file
+        unique_filename = f"{username}_{filename}"  # include username prefix for deleting only owner's file
         if unique_filename in self.files and self.files[unique_filename] == username:
             try:
-                # Remove the file from the storage directory
+                # rmove the file from the storage diretory
                 file_path = os.path.join(self.storage_dir, unique_filename)
                 os.remove(file_path)
-                del self.files[unique_filename]  # Remove the file entry
+                del self.files[unique_filename]  # remove the file entry
                 conn.send(b"File deleted successfully.\n")
                 self.log_message(f"File {filename} deleted by {username}.")
             except FileNotFoundError:
@@ -291,7 +291,7 @@ class Server:
 
     def send_file(self, conn, filename, owner, requesting_user): # Download file function
         try:
-            # Construct the unique filename
+            # construct the unique filename
             unique_filename = f"{owner}_{filename}"
             if unique_filename not in self.files:
                 conn.send(b"Error: File not found.\n")
@@ -301,17 +301,17 @@ class Server:
             filepath = os.path.join(self.storage_dir, unique_filename)
             file_size = os.path.getsize(filepath)
 
-            # Notify client about the file size
+            # notify client about the file size
             conn.send(str(file_size).encode())
             confirmation = conn.recv(1024).decode()
             if confirmation != "Ready":
                 self.log_message(f"Client not ready to receive file: {filename} from {owner}.")
                 return
 
-            # Send the file in chunks
+            # send the file in chunks
             with open(filepath, "rb") as f:
                 while True:
-                    chunk = f.read(1024) # Again sending in packets to client
+                    chunk = f.read(1024) # again sending in packets to client
                     if not chunk:
                         break
                     conn.send(chunk)
@@ -320,11 +320,11 @@ class Server:
             conn.send(b"File sent successfully.\n")
             self.log_message(f"File {filename} sent to {requesting_user} from {owner}.")
 
-            # Checking if requsting_user is the owner the file
+            # checking if requsting_user is the owner the file
             if owner in self.clients and owner != requesting_user:
                 uploader_conn = self.clients[owner]
 
-                # Send notification to file owner
+                # send notification to file owner
                 try:
                     notification = f"NOTIFICATION: Your file '{filename}' was downloaded by {requesting_user}."
                     uploader_conn.send(notification.encode())
@@ -336,7 +336,7 @@ class Server:
             conn.send(b"Error: File transfer failed.\n")
             self.log_message(f"Error sending file {filename} from {owner}: {e}")
 
-    def update_file_list(self): # Using this for accesing file if it is used before by server
+    def update_file_list(self): # using this for accesing file if it is used before by server
         if not self.storage_dir:
             return
 

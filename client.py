@@ -12,18 +12,18 @@ class Client:
         self.root.title("Client GUI")
         self.client_socket = None
         self.username = None
-        self.socket_lock = threading.RLock()  # Using RLock for reentrancy
-        self.receive_thread_running = False  # Flag to control receive thread
+        self.socket_lock = threading.RLock()  # using RLock for reentrancy
+        self.receive_thread_running = False  # flag to control receive thread
 
-        # GUI Components
+        # gui components
         self.create_gui()
 
     def create_gui(self):
         
         style = ttk.Style()
-        style.theme_use('clam')  # Theme for good looking GUI
+        style.theme_use('clam')  # theme for good looking gui
 
-        # GUI starting compenents
+        # gui starting compenents
         settings_frame = ttk.Frame(self.root)
         settings_frame.pack(pady=10)
 
@@ -44,7 +44,7 @@ class Client:
 
         
 
-        #Activity log box 
+        #activity log box 
         log_frame = ttk.Frame(self.root)
         log_frame.pack(pady=10)
 
@@ -56,7 +56,7 @@ class Client:
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self.log_listbox.config(yscrollcommand=scrollbar.set)
 
-        # File operations of client buttons
+        # file operations of client buttons
         file_operations_frame = ttk.Frame(self.root)
         file_operations_frame.pack(pady=10)
 
@@ -72,7 +72,7 @@ class Client:
         self.list_files_button = ttk.Button(file_operations_frame, text="List Files", command=self.list_files, state=tk.DISABLED)
         self.list_files_button.grid(row=1, column=1, padx=5, pady=5)
 
-        # Connection status
+        # connection statusa
         status_frame = ttk.Frame(self.root)
         status_frame.pack(pady=10)
 
@@ -80,7 +80,7 @@ class Client:
         self.status_label = ttk.Label(status_frame, text="Disconnected", foreground="red")
         self.status_label.pack()
 
-        # Disconnect button
+        #disconnect button
         disconnect_frame = ttk.Frame(self.root)
         disconnect_frame.pack(pady=10)
 
@@ -88,7 +88,7 @@ class Client:
         self.disconnect_button.pack()
 
     def log_message(self, message):
-        # Thread safe logging
+        # thread safe logging
         self.root.after(0, self._log_message_safe, message)
 
     def _log_message_safe(self, message):
@@ -105,11 +105,11 @@ class Client:
             return
 
         self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.client_socket.settimeout(5)  # Set a timeout of 5 seconds
+        self.client_socket.settimeout(5)  # set a timeout of 5 seconds
 
         try:
             self.client_socket.connect((server_ip, int(port)))
-            self.client_socket.settimeout(None)  # Reset timeout to blocking mode
+            self.client_socket.settimeout(None)  # reset timeout to blocking mode
             response = self.client_socket.recv(1024).decode()
             self.log_message(response)
 
@@ -133,17 +133,17 @@ class Client:
         except Exception as e:
             self.log_message(f"Error: Failed to connect to the server. {e}")
         finally:
-            self.client_socket.settimeout(None)  # Ensure timeout is reset
+            self.client_socket.settimeout(None)  #ensure timeout is reset
 
 
-    def enable_controls(self): # Enable request options after connection
+    def enable_controls(self): #enable request options after connection
         self.upload_button.config(state=tk.NORMAL)
         self.delete_button.config(state=tk.NORMAL)
         self.download_button.config(state=tk.NORMAL)
         self.list_files_button.config(state=tk.NORMAL)
         self.disconnect_button.config(state=tk.NORMAL)
 
-    def disable_controls(self): # Disable requst options after disconnect
+    def disable_controls(self): #disable requst options after disconnect
         self.upload_button.config(state=tk.DISABLED)
         self.delete_button.config(state=tk.DISABLED)
         self.download_button.config(state=tk.DISABLED)
@@ -156,7 +156,7 @@ class Client:
             self.log_message("No file selected.")
             return
 
-        # New thread for upload 
+        #new thread for upload 
         threading.Thread(target=self._upload_file_thread, args=(filepath,), daemon=True).start()
 
     def _upload_file_thread(self, filepath):
@@ -164,7 +164,7 @@ class Client:
             filename = os.path.basename(filepath)
             file_size = os.path.getsize(filepath)
 
-            with self.socket_lock: #Locking for thread crashes
+            with self.socket_lock: #locking for thread crashes
                 if self.client_socket is None:
                     self.log_message("Not connected to the server.")
                     return
@@ -200,7 +200,7 @@ class Client:
             return
 
         try:
-            with self.socket_lock: # Locking for thread crashes
+            with self.socket_lock: #locking for thread crashes
                 if self.client_socket is None:
                     self.log_message("Not connected to the server.")
                     return
@@ -221,12 +221,12 @@ class Client:
             self.log_message("Error: Missing information for download.")
             return
 
-        # New thread for downloading files
+        # new thread for downloading files
         threading.Thread(target=self._download_file_thread, args=(filename, owner, save_dir), daemon=True).start()
 
     def _download_file_thread(self, filename, owner, save_dir):
         try:
-            with self.socket_lock: # Locking for thread crashes
+            with self.socket_lock: # locking for thread crashes
                 if self.client_socket is None:
                     self.log_message("Not connected to the server.")
                     return
@@ -246,7 +246,7 @@ class Client:
                     received = 0
                     while received < file_size:
                         remaining = file_size - received
-                        data = self.client_socket.recv(min(4096, remaining)) # Make them packet delivery again for deal with large file sizes
+                        data = self.client_socket.recv(min(4096, remaining)) # make them packet delivery again for deal with large file sizes
                         if not data:
                             break
                         f.write(data)
@@ -257,7 +257,7 @@ class Client:
                     self.log_message("Not connected to the server.")
                     return
                 
-                # Read the confirmation message from the server
+                # read the confirmation message from the server
                 response = self.client_socket.recv(1024).decode()
                 self.log_message(response)
 
@@ -282,7 +282,7 @@ class Client:
 
                 response = data.decode()
                 self.log_message("Files on the server:")
-                for line in response.splitlines(): # Split them from new lines to make them readable
+                for line in response.splitlines(): # split them from new lines to make them readable
                     self.log_message(line)
 
         except Exception as e:
@@ -294,7 +294,7 @@ class Client:
                 if self.client_socket:
                     self.client_socket.close()
                 self.client_socket = None
-                self.receive_thread_running = False  # Stop the receive thread
+                self.receive_thread_running = False  # stop the receive thread
             self.disable_controls()
             self.log_message("Disconnected from the server.")
         except Exception as e:
@@ -302,24 +302,24 @@ class Client:
         self.update_status_label("Disconnected")
         self.connect_button.config(state=tk.NORMAL)
 
-    def start_receive_thread(self): # Listening thread starter for receive message function using this in connect server function
+    def start_receive_thread(self): #listening thread starter for receive message function using this in connect server function
         
         self.receive_thread_running = True
         receive_thread = threading.Thread(target=self.receive_message, daemon=True)
         receive_thread.start()
 
-    def receive_message(self): # Listening messages from server
+    def receive_message(self): # listening messages from server
         try:
             while self.receive_thread_running:
-                acquired = self.socket_lock.acquire(timeout=0.1) # This is for crash 
+                acquired = self.socket_lock.acquire(timeout=0.1) # this is for crash 
                 if acquired:
                     try:
                         if self.client_socket is None:
-                            break  # Socket is closed exit the loop
+                            break  # socket is closed exit the loop
                         self.client_socket.settimeout(0.1)
                         try:
                             message = self.client_socket.recv(1024).decode()
-                            if message: # Message content checking for motion of client
+                            if message: # message content checking for motion of client
                                 if message.startswith("NOTIFICATION:"):
                                     self.log_message(f"{message}")
                                 elif message.startswith("DISCONNECT"):
@@ -327,15 +327,15 @@ class Client:
                                     self.disconnect()
                                     break
                                 else:
-                                    # Handle other messages
+                                    # handle other messages
                                     self.log_message(f"{message}")
                             else:
-                                # Connection closed by server
+                                #cnnection closed by server
                                 self.log_message("Connection closed by server.")
                                 self.disconnect()
                                 break
                         except socket.timeout:
-                            continue  # Contiune to listening 
+                            continue  #contiune to listening 
                         except Exception as e:
                             self.log_message(f"Error while receiving message: {e}")
                             self.disconnect()
@@ -347,14 +347,14 @@ class Client:
                         self.socket_lock.release()
                 else:
                     
-                    # Wait and try again
+                    #wait and try again
                     time.sleep(0.1)
         except Exception as e:
             self.log_message(f"Connection error: {e}")
             if self.client_socket:
                 self.client_socket.close()
     
-    def update_status_label(self, status): # User frienly function for GUI informing about connection 
+    def update_status_label(self, status): #user frienly fnction for gui informing about connection 
         if status == "Connected":
             self.status_label.config(text="Connected", foreground="green")
         elif status == "Disconnected":
